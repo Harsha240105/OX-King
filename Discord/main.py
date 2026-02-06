@@ -22,8 +22,9 @@ import asyncio
 # -------------------------------
 # CONFIG
 # -------------------------------
-
-TOKEN = "" # <- Token comes from Replit Secrets
+import os
+TOKEN = os.getenv("BOT_TOKEN")
+bot.run(TOKEN)
 VOICE_CHANNEL_NAME = "Anime"                  # Voice channel name
 XP_PER_MINUTE = 0.833                         # 50 XP per hour = 0.5 level
 
