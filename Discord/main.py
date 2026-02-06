@@ -1,6 +1,9 @@
 from flask import Flask
 from threading import Thread
 
+# -------------------------------
+# KEEP ALIVE SERVER
+# -------------------------------
 app = Flask('')
 
 @app.route('/')
@@ -13,25 +16,29 @@ def run():
 def keep_alive():
     t = Thread(target=run)
     t.start()
+
+
+# -------------------------------
+# IMPORTS
+# -------------------------------
 import os
 import discord
 from discord.ext import tasks, commands
 import aiosqlite
 import asyncio
 
+
 # -------------------------------
 # CONFIG
 # -------------------------------
-import os
-TOKEN = os.getenv("BOT_TOKEN")
-bot.run(TOKEN)
-VOICE_CHANNEL_NAME = "Anime"                  # Voice channel name
-XP_PER_MINUTE = 0.833                         # 50 XP per hour = 0.5 level
+TOKEN = os.getenv("BOT_TOKEN")      # Load token safely from Render environment
+VOICE_CHANNEL_NAME = "Anime"        # Channel to track XP in
+XP_PER_MINUTE = 0.833               # XP given per minute
+
 
 # -------------------------------
 # INTENTS
 # -------------------------------
-
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -39,10 +46,10 @@ intents.voice_states = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+
 # -------------------------------
 # DATABASE
 # -------------------------------
-
 async def setup_db():
     async with aiosqlite.connect("database.db") as db:
         await db.execute("""
@@ -69,16 +76,16 @@ async def get_level(user_id):
                 return round(row[0], 2)
             return 0
 
-# -------------------------------
-# VOICE XP LOOP
-# -------------------------------
 
+# -------------------------------
+# XP LOOP
+# -------------------------------
 @tasks.loop(minutes=1)
 async def voice_xp_loop():
-    await bot.wait_until_ready()  # WAIT until bot joins the server
+    await bot.wait_until_ready()
 
     if not bot.guilds:
-        print("Bot is not in any server yet.")
+        print("Bot not in server yet.")
         return
 
     guild = bot.guilds[0]
@@ -93,29 +100,28 @@ async def voice_xp_loop():
             await add_xp(member.id, XP_PER_MINUTE)
             print(f"Gave {XP_PER_MINUTE} XP to {member.name}")
 
+
 # -------------------------------
 # EVENTS
 # -------------------------------
-
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
     await setup_db()
     voice_xp_loop.start()
 
-# -------------------------------
-# LEVEL COMMAND
-# -------------------------------
 
+# -------------------------------
+# COMMANDS
+# -------------------------------
 @bot.command()
 async def level(ctx):
-    """Check your level"""
     xp = await get_level(ctx.author.id)
     await ctx.send(f"**{ctx.author.name}**, your level is: **{xp}** 🎉")
 
-# -------------------------------
-# START BOT
-# -------------------------------
 
-keep_alive()
-bot.run(TOKEN)
+# -------------------------------
+# START BOT (FINAL LINE ONLY)
+# -------------------------------
+keep_alive()   # Start flask server
+bot.run(TOKEN) # Start Discord bot
