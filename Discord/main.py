@@ -1,80 +1,117 @@
-from flask import Flask
-from threading import Thread
-import discord
-from discord.ext import tasks, commands
-import asyncio
 import os
+import discord
+from discord.ext import commands, tasks
+import aiosqlite
+import asyncio
 
-from utils.db import setup_db, add_xp, get_xp, get_top
+# Local files
+from utils.db import Database
 from utils.rank_card import generate_rank_card
 from utils.leaderboard import generate_leaderboard
 
-# -----------------------------
-# KEEP ALIVE (Render)
-# -----------------------------
-app = Flask('')
+# ===============================
+# FLASK KEEP ALIVE (Render.com)
+# ===============================
+from flask import Flask
+from threading import Thread
+
+app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot is alive!"
+    return "OXK Ranking Bot is running!"
 
 def run():
     app.run(host='0.0.0.0', port=8080)
 
 def keep_alive():
-    t = Thread(target=run)
-    t.start()
+    Thread(target=run).start()
 
-# -----------------------------
-# DISCORD BOT
-# -----------------------------
+
+# ===============================
+# DISCORD BOT SETUP
+# ===============================
 TOKEN = os.getenv("BOT_TOKEN")
-VOICE_CHANNEL_NAME = "Anime"
-XP_PER_MINUTE = 0.833
 
 intents = discord.Intents.default()
-intents.members = True
 intents.message_content = True
+intents.members = True
 intents.voice_states = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# XP LOOP
+db = Database("database.db")
+
+
+# ===============================
+# BOT READY EVENT
+# ===============================
+@bot.event
+async def on_ready():
+    print(f"✅ Logged in as {bot.user}")
+    await db.setup()
+    voice_xp_loop.start()
+    print("XP LOOP RUNNING...")
+
+
+# ===============================
+# VOICE XP LOOP (per minute)
+# ===============================
+VOICE_CHANNEL_NAME = "Anime"
+XP_PER_MINUTE = 0.833   # = 50 XP / hour
+
 @tasks.loop(minutes=1)
-async def xp_loop():
+async def voice_xp_loop():
     await bot.wait_until_ready()
+
+    if not bot.guilds:
+        return
+
     guild = bot.guilds[0]
     channel = discord.utils.get(guild.voice_channels, name=VOICE_CHANNEL_NAME)
 
     if not channel:
-        print("Voice channel not found.")
+        print(f"❌ Voice channel '{VOICE_CHANNEL_NAME}' not found")
         return
 
     for member in channel.members:
-        if not member.bot:
-            await add_xp(member.id, XP_PER_MINUTE)
-            print(f"Gave {XP_PER_MINUTE} XP to {member.name}")
+        if member.bot:
+            continue
 
-@bot.event
-async def on_ready():
-    print(f"Logged in as {bot.user}")
-    await setup_db()
-    xp_loop.start()
+        await db.add_xp(member.id, XP_PER_MINUTE)
+        print(f"🎉 Gave {XP_PER_MINUTE} XP → {member.name}")
 
-# COMMAND: Level
+
+# ===============================
+# COMMAND: !level
+# ===============================
 @bot.command()
 async def level(ctx):
-    xp = await get_xp(ctx.author.id)
-    path = await generate_rank_card(ctx.author, xp)
-    await ctx.send(file=discord.File(path))
+    """Show your rank card"""
+    xp, level, next_xp = await db.get_user_progress(ctx.author.id)
 
-# COMMAND: Leaderboard
-@bot.command()
-async def top(ctx):
-    data = await get_top(10)
-    path = await generate_leaderboard(data, ctx.guild)
-    await ctx.send(file=discord.File(path))
+    file = await generate_rank_card(
+        user=ctx.author,
+        xp=xp,
+        level=level,
+        next_xp=next_xp,
+        display_name="OXK"  # Your custom name
+    )
 
+    await ctx.send(file=file)
+
+
+# ===============================
+# COMMAND: !leaderboard
+# ===============================
+@bot.command(aliases=["lb"])
+async def leaderboard(ctx):
+    file = await generate_leaderboard(ctx.guild, db)
+    await ctx.send(file=file)
+
+
+# ===============================
 # START BOT
+# ===============================
 keep_alive()
 bot.run(TOKEN)
